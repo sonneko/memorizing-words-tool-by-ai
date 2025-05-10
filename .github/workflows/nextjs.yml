@@ -5,10 +5,10 @@ name: Build Next.js SSG App
 on:
   push:
     branches:
-      - main # Or your default branch, e.g., master
+      - master # Or your default branch, e.g., master
   pull_request:
     branches:
-      - main # Or your default branch
+      - master # Or your default branch
 
 jobs:
   build:
