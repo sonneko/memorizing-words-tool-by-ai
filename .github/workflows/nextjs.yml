@@ -48,3 +48,4 @@ jobs:
           name: lexicli-static-build # Name of the artifact
           path: out/ # Path to the directory to upload (Next.js SSG output)
           if-no-files-found: error # Fail the step if the 'out' directory is not found
+
