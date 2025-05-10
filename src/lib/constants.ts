@@ -5,7 +5,8 @@ export const MENU_OPTIONS = {
   LEARN: "1",
   REVIEW: "2",
   SEARCH: "3",
-  EXIT: "4",
+  LOAD_VOCAB: "4",
+  EXIT: "5",
 };
 
 export const UI_TEXTS = {
@@ -17,6 +18,7 @@ export const UI_TEXTS = {
   MENU_LEARN: `${MENU_OPTIONS.LEARN}. 学習セッション (Learn new words)`,
   MENU_REVIEW: `${MENU_OPTIONS.REVIEW}. 間違えた単語レビュー (Review missed words)`,
   MENU_SEARCH: `${MENU_OPTIONS.SEARCH}. 単語検索 (Search words)`,
+  MENU_LOAD_VOCAB: `${MENU_OPTIONS.LOAD_VOCAB}. 単語ファイル読込 (Load vocabulary file)`,
   MENU_EXIT: `${MENU_OPTIONS.EXIT}. 終了 (Exit)`,
   CHOOSE_OPTION: "Choose an option: ",
   INVALID_OPTION: "Invalid option. Please try again.",
@@ -51,7 +53,18 @@ export const UI_TEXTS = {
   NO_SEARCH_RESULTS: "No words found matching your search.",
   PRESS_ANY_KEY_CONTINUE: "Press Enter to continue...",
   EXIT_MESSAGE: "Thank you for using LexiCLI! Closing session.",
-  INDEXEDDB_NOT_SUPPORTED: "IndexedDB is not supported in your browser. Missed words cannot be saved or reviewed.",
+  INDEXEDDB_NOT_SUPPORTED: "IndexedDB is not supported in your browser. Progress and custom vocabulary may not be saved.",
   INDEXEDDB_ERROR: "An error occurred with the database.",
   LISTING_TESTS_ERROR: "Could not retrieve test list.",
+  LOADING_FROM_INDEXEDDB: "Attempting to load vocabulary from local storage...",
+  LOADED_FROM_INDEXEDDB_SUCCESS: (count: number) => `Loaded ${count} words from local storage.`,
+  INDEXEDDB_EMPTY_FALLBACK_FETCH: "No vocabulary found in local storage or error occurred. Attempting to fetch default vocabulary...",
+  FETCH_FALLBACK_SUCCESS_SAVED_INDEXEDDB: "Default vocabulary loaded and saved to local storage.",
+  FETCH_FALLBACK_FAIL: "Failed to load default vocabulary. You can try loading a file with 'loadvocab' command.",
+  PROMPT_LOAD_VOCAB_FILE: "Please select a '.json' vocabulary file.",
+  VOCAB_FILE_SELECTED: (fileName: string) => `Selected file: ${fileName}. Processing...`,
+  VOCAB_FILE_LOAD_SUCCESS: (count: number) => `Successfully loaded and saved ${count} words from file.`,
+  VOCAB_FILE_LOAD_INVALID: "Invalid file format. The file must be a JSON array of {'ja': string, 'en': string} objects.",
+  VOCAB_FILE_LOAD_ERROR: (errorMsg: string) => `Error loading vocabulary file: ${errorMsg}`,
+  VOCAB_FILE_NO_FILE_SELECTED: "No file selected. Returning to menu.",
 };

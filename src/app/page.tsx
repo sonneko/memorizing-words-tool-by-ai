@@ -1,6 +1,7 @@
+
 "use client";
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import CliOutput from '@/components/cli/CliOutput';
 import CliInput from '@/components/cli/CliInput';
 import { useCliInterface } from '@/hooks/useCliInterface';
@@ -16,10 +17,13 @@ export default function HomePage() {
     handleInputChange,
     processCommand,
     handleKeyDown,
-    showMenu,
+    isFileLoadRequested,
+    clearFileLoadRequest,
+    processLoadedVocabData,
   } = useCliInterface();
 
-  // Register service worker
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       window.addEventListener('load', () => {
@@ -30,10 +34,8 @@ export default function HomePage() {
     }
   }, []);
 
-  // Handle global click to focus input
   useEffect(() => {
     const focusInput = (event: MouseEvent) => {
-      // Check if the click is not on an interactive element like a button inside the output
       if (inputRef.current && event.target && !(event.target as HTMLElement).closest('button, a, input, textarea')) {
          inputRef.current.focus();
       }
@@ -44,9 +46,51 @@ export default function HomePage() {
     };
   }, [inputRef]);
 
+  useEffect(() => {
+    if (isFileLoadRequested && fileInputRef.current) {
+      fileInputRef.current.click();
+      clearFileLoadRequest(); 
+    }
+  }, [isFileLoadRequested, clearFileLoadRequest]);
+
+  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const text = e.target?.result;
+        if (typeof text === 'string') {
+          await processLoadedVocabData(text, file.name);
+        } else {
+          console.error("File content is not a string.");
+          // Potentially call a method from useCliInterface to add an error line to output
+          // addLine(UI_TEXTS.VOCAB_FILE_LOAD_ERROR("File content could not be read as text."), 'error');
+        }
+      };
+      reader.onerror = () => {
+          console.error("Error reading file.");
+          // addLine(UI_TEXTS.VOCAB_FILE_LOAD_ERROR("Could not read the selected file."), 'error');
+      }
+      reader.readAsText(file);
+      if (event.target) event.target.value = ''; // Reset file input
+    } else {
+        // If no file was selected (e.g., user clicked cancel)
+        // Add a message or handle as needed, e.g., return to menu
+        // This might be handled by processCommand setting mode to MENU if LOAD_VOCAB_FILE gets any input
+        processCommand(UI_TEXTS.VOCAB_FILE_NO_FILE_SELECTED); // Send a "command" to potentially reset state
+    }
+  };
+
 
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground font-mono">
+    <div className="flex flex-col h-screen bg-background text-foreground font-mono text-sm">
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept=".json"
+        onChange={handleFileSelected}
+      />
       <CliOutput lines={output} />
       {mode !== 'LOADING' && mode !== 'ERROR' && mode !== 'EXITED' && (
         <CliInput
@@ -56,10 +100,10 @@ export default function HomePage() {
           onKeyDown={handleKeyDown}
           onSubmit={(e) => { e.preventDefault(); processCommand(inputValue); }}
           disabled={isLoading || mode === 'EXITED'}
-          isFocused={true} // Let CSS handle actual focus state for cursor visibility
+          isFocused={true}
         />
       )}
-      {mode === 'ERROR' && (
+      {mode === 'ERROR' && !isLoading && ( // Ensure not to show vocab load error if it's another type of error state
         <div className="p-2 text-destructive">{UI_TEXTS.VOCAB_LOAD_ERROR}</div>
       )}
     </div>

@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { forwardRef } from 'react';
@@ -17,18 +18,22 @@ const CliInput = forwardRef<HTMLInputElement, CliInputProps>(
     return (
       <div className={cn("flex items-center p-2 border-t border-border", className)}>
         <span className="text-primary mr-1">{promptSymbol}</span>
+        {isFocused && <Cursor className="mr-1" />} {/* Moved cursor here and added margin */}
         <input
           ref={ref}
           type="text"
           value={currentValue}
           onChange={(e) => onInputChange(e.target.value)}
-          className="flex-grow bg-transparent text-input-foreground focus:outline-none placeholder-muted-foreground"
+          // Added pl-0.5 for a small space after the custom cursor if it's very close
+          className="flex-grow bg-transparent text-input-foreground focus:outline-none placeholder-muted-foreground pl-0.5" 
           autoFocus
           spellCheck="false"
           autoComplete="off"
+          // To hide native browser caret if desired:
+          // style={{ caretColor: 'transparent' }} 
+          // Or use Tailwind: caret-transparent (if Tailwind v3.3+)
           {...props}
         />
-        {isFocused && <Cursor />}
       </div>
     );
   }

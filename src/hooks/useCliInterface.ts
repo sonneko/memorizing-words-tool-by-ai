@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -22,14 +23,15 @@ export const useCliInterface = () => {
 
   const [currentLearningSession, setCurrentLearningSession] = useState<LearningSession | null>(null);
   const [currentReviewSession, setCurrentReviewSession] = useState<ReviewSession | null>(null);
-  const [tempTestName, setTempTestName] = useState<string>(''); // For review test name input
+  const [tempTestName, setTempTestName] = useState<string>('');
 
-  const { db, error: dbError, saveData, loadData, updateTestData, deleteTest, getAllTestNames } = useIndexedDB();
+  const { db, error: dbError, saveData, loadData, updateTestData, deleteTest, getAllTestNames, saveVocabulary, loadMainVocabulary } = useIndexedDB();
   const { toast } = useToast();
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isFileLoadRequested, setIsFileLoadRequested] = useState(false);
 
-  // Helper to add line to output
+
   const addLine = useCallback((content: string | JSX.Element, type: OutputLineData['type'] = 'system') => {
     setOutput(prev => {
       const newOutput = [...prev, { id: generateId(), type, content, timestamp: Date.now() }];
@@ -44,54 +46,87 @@ export const useCliInterface = () => {
      addLine(promptText, 'prompt');
   }, [addLine]);
 
+  const loadInitialVocabulary = useCallback(async () => {
+    setIsLoading(true);
+    setMode('LOADING');
+    addLine(UI_TEXTS.LOADING_VOCAB);
 
-  // Load vocabulary
-  useEffect(() => {
-    const loadVocabulary = async () => {
-      setIsLoading(true);
-      setMode('LOADING');
-      addLine(UI_TEXTS.LOADING_VOCAB);
+    if (db) {
       try {
-        const response = await fetch('/vocab.json');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data: Word[] = await response.json();
-        setVocab(data);
-        addLine(UI_TEXTS.VOCAB_LOAD_SUCCESS(data.length), 'success');
-        setMode('MENU');
-      } catch (error) {
-        console.error("Failed to load vocabulary:", error);
-        addLine(UI_TEXTS.VOCAB_LOAD_ERROR, 'error');
-        setMode('ERROR');
-      } finally {
-        setIsLoading(false);
+        addLine(UI_TEXTS.LOADING_FROM_INDEXEDDB);
+        const storedVocab = await loadMainVocabulary();
+        if (storedVocab && storedVocab.length > 0) {
+          setVocab(storedVocab);
+          addLine(UI_TEXTS.LOADED_FROM_INDEXEDDB_SUCCESS(storedVocab.length), 'success');
+          setMode('MENU');
+          setIsLoading(false);
+          return;
+        } else {
+          addLine(UI_TEXTS.INDEXEDDB_EMPTY_FALLBACK_FETCH);
+        }
+      } catch (e: any) {
+        console.error("Failed to load vocab from IndexedDB:", e);
+        addLine(UI_TEXTS.INDEXEDDB_EMPTY_FALLBACK_FETCH + (e.message ? ` (${e.message})` : ''), 'error');
       }
-    };
-    loadVocabulary();
-  }, [addLine]);
-
-  // Display menu when mode changes to MENU
-  useEffect(() => {
-    if (mode === 'MENU' && !isLoading) {
-      showMenu();
+    } else {
+       addLine("Database not ready, attempting to fetch default vocabulary...");
     }
-  }, [mode, isLoading, addLine]); // showMenu dep removed as it's defined below based on addLine
+
+    try {
+      const response = await fetch('/vocab.json');
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data: Word[] = await response.json();
+      setVocab(data);
+      addLine(UI_TEXTS.VOCAB_LOAD_SUCCESS(data.length), 'success');
+      if (db) {
+        try {
+          await saveVocabulary(data);
+          addLine(UI_TEXTS.FETCH_FALLBACK_SUCCESS_SAVED_INDEXEDDB, 'info');
+        } catch (saveError: any) {
+          console.error("Failed to save fetched vocab to IndexedDB:", saveError);
+          addLine(`Info: Could not save fetched vocabulary to local storage. (${saveError.message})`, 'info');
+        }
+      }
+      setMode('MENU');
+    } catch (error: any) {
+      console.error("Failed to load vocabulary from fetch:", error);
+      addLine(UI_TEXTS.VOCAB_LOAD_ERROR + (error.message ? ` (${error.message})` : ''), 'error');
+      addLine("You can try loading a vocabulary file using the 'loadvocab' command.", "info");
+      setMode('MENU'); // Go to menu to allow loadvocab command
+    } finally {
+      setIsLoading(false);
+    }
+  }, [addLine, db, loadMainVocabulary, saveVocabulary]);
+
+  useEffect(() => {
+    if (db) {
+      loadInitialVocabulary();
+    }
+  }, [db, loadInitialVocabulary]);
+
 
   const showMenu = useCallback(() => {
     addLine(UI_TEXTS.MAIN_MENU_HEADER, 'header');
     addLine(UI_TEXTS.MENU_LEARN);
     addLine(UI_TEXTS.MENU_REVIEW);
     addLine(UI_TEXTS.MENU_SEARCH);
+    addLine(UI_TEXTS.MENU_LOAD_VOCAB);
     addLine(UI_TEXTS.MENU_EXIT);
     addPrompt(UI_TEXTS.CHOOSE_OPTION);
-    setMode('MENU'); // Ensure mode is MENU
+    setMode('MENU');
   }, [addLine, addPrompt]);
 
-  // Focus input when mode changes or output is added
+  useEffect(() => {
+    if (mode === 'MENU' && !isLoading) {
+      showMenu();
+    }
+  }, [mode, isLoading, showMenu]);
+
    useEffect(() => {
-    if (inputRef.current) {
+    if (inputRef.current && (mode !== 'LOADING' && mode !== 'EXITED')) {
       inputRef.current.focus();
     }
-  }, [output, mode]); // Focus on new output or mode change
+  }, [output, mode]);
 
   const handleInputChange = (value: string) => {
     setInputValue(value);
@@ -99,19 +134,17 @@ export const useCliInterface = () => {
   
   const processCommand = useCallback(async (command: string) => {
     addLine(`${PROMPT_SYMBOL}${command}`, 'user');
-    setInputValue(''); // Clear input after submission
+    setInputValue('');
     if (command.trim() !== "" && (history.length === 0 || history[history.length - 1] !== command)) {
       setHistory(prev => [...prev, command]);
     }
-    setHistoryIndex(-1); // Reset history index
+    setHistoryIndex(-1);
 
-    // Quit command for learning/review sessions
     if ((mode === 'LEARNING' || mode === 'REVIEWING') && command.toLowerCase() === 'q') {
       if (mode === 'LEARNING' && currentLearningSession) {
         addLine(UI_TEXTS.SESSION_INTERRUPTED, 'info');
-        const { correctAnswers, totalQuestions, missedInSession } = currentLearningSession;
-        const askedQuestions = currentLearningSession.currentIndex; // Number of questions asked before quitting
-        addLine(UI_TEXTS.SESSION_SUMMARY(correctAnswers, askedQuestions), 'info');
+        const { correctAnswers, currentIndex, missedInSession } = currentLearningSession;
+        addLine(UI_TEXTS.SESSION_SUMMARY(correctAnswers, currentIndex), 'info');
         if (missedInSession.length > 0) {
           setMode('LEARN_SAVE_TESTNAME');
           addPrompt(UI_TEXTS.ENTER_TEST_NAME);
@@ -119,16 +152,15 @@ export const useCliInterface = () => {
           addLine(UI_TEXTS.NO_MISSED_WORDS, 'success');
           setMode('MENU');
         }
-        setCurrentLearningSession(prev => prev ? { ...prev, currentIndex: prev.words.length } : null); // Mark as finished
+        setCurrentLearningSession(prev => prev ? { ...prev, currentIndex: prev.words.length } : null);
       } else if (mode === 'REVIEWING' && currentReviewSession) {
         addLine(UI_TEXTS.SESSION_INTERRUPTED, 'info');
-        const { correctAnswers, totalQuestions, missedInSession, testName, initialWords } = currentReviewSession;
-        const askedQuestions = currentReviewSession.currentIndex;
-        addLine(UI_TEXTS.SESSION_SUMMARY(correctAnswers, askedQuestions), 'info');
+        const { correctAnswers, currentIndex, missedInSession, testName, initialWords } = currentReviewSession;
+        addLine(UI_TEXTS.SESSION_SUMMARY(correctAnswers, currentIndex), 'info');
         
         const wordsKeptInTest = initialWords.filter(word => 
-            !currentReviewSession.words.slice(0, askedQuestions) // Words asked in this session
-                .find(sw => sw.en === word.en && !missedInSession.find(mw => mw.en === sw.en)) // If it was asked AND not missed
+            !currentReviewSession.words.slice(0, currentIndex)
+                .find(sw => sw.en === word.en && !missedInSession.find(mw => mw.en === sw.en))
         );
 
         if (db && testName) {
@@ -145,7 +177,6 @@ export const useCliInterface = () => {
       }
       return;
     }
-
 
     switch (mode) {
       case 'MENU':
@@ -172,14 +203,15 @@ export const useCliInterface = () => {
       case 'SEARCH_TERM':
         handleSearchTermInput(command);
         break;
-      case 'SEARCH_RESULTS': // Any input returns to menu
-        setMode('MENU');
+      case 'SEARCH_RESULTS':
+      case 'LOAD_VOCAB_FILE': // Any input here might be a cancel, or handled by file input
+        setMode('MENU'); // Default to menu
         break;
       default:
         addLine(`Unknown mode or command: ${command}`, 'error');
-        setMode('MENU'); // Default to menu
+        setMode('MENU');
     }
-  }, [mode, addLine, addPrompt, vocab, currentLearningSession, currentReviewSession, db, history, saveData, loadData, updateTestData, deleteTest, getAllTestNames, showMenu]);
+  }, [mode, addLine, addPrompt, vocab, currentLearningSession, currentReviewSession, db, history, saveData, loadData, updateTestData, deleteTest, getAllTestNames, showMenu, saveVocabulary]);
 
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -200,7 +232,7 @@ export const useCliInterface = () => {
         if (newIndex >= historyIndex && historyIndex < history.length -1) {
              setHistoryIndex(newIndex);
              setInputValue(history[newIndex]);
-        } else { // at the last item or beyond, clear input
+        } else {
             setHistoryIndex(-1);
             setInputValue("");
         }
@@ -208,7 +240,6 @@ export const useCliInterface = () => {
     }
   };
 
-  // Menu choice
   const handleMenuChoice = (choice: string) => {
     switch (choice) {
       case MENU_OPTIONS.LEARN:
@@ -223,10 +254,14 @@ export const useCliInterface = () => {
         setMode('SEARCH_TERM');
         addPrompt(UI_TEXTS.ENTER_SEARCH_TERM);
         break;
+      case MENU_OPTIONS.LOAD_VOCAB:
+        setMode('LOAD_VOCAB_FILE');
+        setIsFileLoadRequested(true);
+        addPrompt(UI_TEXTS.PROMPT_LOAD_VOCAB_FILE);
+        break;
       case MENU_OPTIONS.EXIT:
         addLine(UI_TEXTS.EXIT_MESSAGE, 'info');
         setMode('EXITED');
-        // In a real CLI, this might close. Here, it just signifies end.
         break;
       default:
         addLine(UI_TEXTS.INVALID_OPTION, 'error');
@@ -234,8 +269,12 @@ export const useCliInterface = () => {
     }
   };
 
-  // Learning session setup
   const handleLearnRangeInput = (rangeStr: string) => {
+    if (vocab.length === 0) {
+        addLine("Vocabulary is empty. Please load a vocabulary file first using 'loadvocab'.", 'error');
+        setMode('MENU');
+        return;
+    }
     const range = parseRange(rangeStr, vocab.length);
     if (!range) {
       addLine(UI_TEXTS.INVALID_RANGE + vocab.length, 'error');
@@ -254,7 +293,7 @@ export const useCliInterface = () => {
       correctAnswers: 0,
       totalQuestions: selectedWords.length,
       missedInSession: [],
-      direction: 'en-to-ja', // Default, will be set next
+      direction: 'en-to-ja',
       originalRange: rangeStr
     });
     setMode('LEARN_DIRECTION');
@@ -262,7 +301,7 @@ export const useCliInterface = () => {
   };
 
   const handleLearnDirectionInput = (directionStr: string) => {
-    if (!currentLearningSession) return; // Should not happen
+    if (!currentLearningSession) return;
     if (directionStr === '1' || directionStr === '2') {
       const direction: 'en-to-ja' | 'ja-to-en' = directionStr === '1' ? 'en-to-ja' : 'ja-to-en';
       setCurrentLearningSession(prev => prev ? { ...prev, direction } : null);
@@ -276,7 +315,6 @@ export const useCliInterface = () => {
   
   const askNextLearningQuestion = (session: LearningSession | null = currentLearningSession) => {
     if (!session || session.currentIndex >= session.words.length) {
-      // Session finished
       addLine(UI_TEXTS.SESSION_SUMMARY(session?.correctAnswers ?? 0, session?.totalQuestions ?? 0), 'info');
       if (session && session.missedInSession.length > 0) {
         setMode('LEARN_SAVE_TESTNAME');
@@ -295,7 +333,7 @@ export const useCliInterface = () => {
   };
 
   const handleLearningAnswer = (answer: string) => {
-    if (!currentLearningSession) return; // Should not happen
+    if (!currentLearningSession) return;
 
     const word = currentLearningSession.words[currentLearningSession.currentIndex];
     const isCorrect = checkAnswer(answer, word, currentLearningSession.direction);
@@ -308,7 +346,7 @@ export const useCliInterface = () => {
     } else {
       const correctAnswerDisplay = currentLearningSession.direction === 'en-to-ja' ? word.ja : word.en;
       addLine(`${UI_TEXTS.INCORRECT_PREFIX}${correctAnswerDisplay}`, 'error');
-      if (!newMissedInSession.find(w => w.en === word.en)) { // Avoid duplicates in missed list
+      if (!newMissedInSession.find(w => w.en === word.en)) {
         newMissedInSession.push(word);
       }
     }
@@ -344,17 +382,16 @@ export const useCliInterface = () => {
       await saveData(name, currentLearningSession.missedInSession);
       addLine(UI_TEXTS.MISSED_WORDS_SAVED(name), 'success');
       toast({ title: "List Saved", description: `Missed words saved as '${name}'.` });
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      addLine(UI_TEXTS.MISSED_WORDS_SAVE_ERROR, 'error');
+      addLine(UI_TEXTS.MISSED_WORDS_SAVE_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
       toast({ title: "Save Error", description: UI_TEXTS.MISSED_WORDS_SAVE_ERROR, variant: "destructive" });
     } finally {
-      setCurrentLearningSession(null); // Clear session
+      setCurrentLearningSession(null);
       setMode('MENU');
     }
   };
 
-  // Review session logic
   const handleReviewChooseTest = async (command: string) => {
     const input = command.trim().toLowerCase();
     if (input === 'menu') {
@@ -375,8 +412,8 @@ export const useCliInterface = () => {
                 addLine(UI_TEXTS.AVAILABLE_TESTS, 'header');
                 testNames.forEach(name => addLine(`- ${name}`));
             }
-        } catch (e) {
-            addLine(UI_TEXTS.LISTING_TESTS_ERROR, 'error');
+        } catch (e: any) {
+            addLine(UI_TEXTS.LISTING_TESTS_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
         }
         addPrompt(UI_TEXTS.CHOOSE_REVIEW_TEST);
         return;
@@ -387,7 +424,7 @@ export const useCliInterface = () => {
         addPrompt(UI_TEXTS.CHOOSE_REVIEW_TEST);
         return;
     }
-    setTempTestName(testName); // Store the chosen test name
+    setTempTestName(testName);
     if (!db) {
       addLine(UI_TEXTS.INDEXEDDB_NOT_SUPPORTED, 'error');
       setMode('MENU');
@@ -401,41 +438,30 @@ export const useCliInterface = () => {
         addPrompt(UI_TEXTS.CHOOSE_REVIEW_TEST);
         return;
       }
-      // For review, default direction is English to Japanese
       const direction: 'en-to-ja' | 'ja-to-en' = 'en-to-ja'; 
-      // Could add a step to ask for direction if desired.
       
-      setCurrentReviewSession({
-        words: shuffleArray(wordsToReview),
-        initialWords: [...wordsToReview], // Keep a copy of original words for updating
-        currentIndex: 0,
-        correctAnswers: 0,
-        totalQuestions: wordsToReview.length,
-        missedInSession: [],
-        direction: direction, 
-        testName: testName,
-      });
-      setMode('REVIEWING');
-      askNextReviewQuestion({
+      const newReviewSession = {
         words: shuffleArray(wordsToReview),
         initialWords: [...wordsToReview],
         currentIndex: 0,
         correctAnswers: 0,
         totalQuestions: wordsToReview.length,
         missedInSession: [],
-        direction: direction,
+        direction: direction, 
         testName: testName,
-      });
-    } catch (e) {
+      };
+      setCurrentReviewSession(newReviewSession);
+      setMode('REVIEWING');
+      askNextReviewQuestion(newReviewSession);
+    } catch (e: any) {
       console.error(e);
-      addLine(UI_TEXTS.INDEXEDDB_ERROR, 'error');
+      addLine(UI_TEXTS.INDEXEDDB_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
       addPrompt(UI_TEXTS.CHOOSE_REVIEW_TEST);
     }
   };
 
   const askNextReviewQuestion = (session: ReviewSession | null = currentReviewSession) => {
     if (!session || session.currentIndex >= session.words.length) {
-      // Review session finished
       addLine(UI_TEXTS.SESSION_SUMMARY(session?.correctAnswers ?? 0, session?.totalQuestions ?? 0), 'info');
       
       if (session) {
@@ -444,7 +470,6 @@ export const useCliInterface = () => {
           missedInSession.some(missedWord => missedWord.en === initialWord.en)
         );
 
-        // If all words were answered correctly
         if (correctAnswers === totalQuestions && totalQuestions > 0) {
              if (db && testName) {
                 deleteTest(testName)
@@ -453,30 +478,30 @@ export const useCliInterface = () => {
                         addLine(`Test '${testName}' has been removed as all words were answered correctly.`, 'info');
                         toast({ title: "Test Completed!", description: `Test '${testName}' removed.` });
                     })
-                    .catch(e => {
-                        addLine(UI_TEXTS.REVIEW_UPDATE_ERROR, 'error');
+                    .catch((e: any) => {
+                        addLine(UI_TEXTS.REVIEW_UPDATE_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
                         console.error("Error deleting test:", e);
                     });
             }
-        } else if (db && testName) { // Some words missed or session incomplete
+        } else if (db && testName) {
             if (wordsToKeep.length > 0) {
                 updateTestData(testName, wordsToKeep)
                     .then(() => {
                         addLine(UI_TEXTS.REVIEW_UPDATED(testName), 'success');
                         toast({ title: "Test Updated", description: `Test '${testName}' updated.` });
                     })
-                    .catch(e => {
-                         addLine(UI_TEXTS.REVIEW_UPDATE_ERROR, 'error');
+                    .catch((e: any) => {
+                         addLine(UI_TEXTS.REVIEW_UPDATE_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
                          console.error("Error updating test data:", e);
                     });
-            } else if (initialWords.length > 0) { // All words were in the test, and now none are left to keep
+            } else if (initialWords.length > 0) {
                  deleteTest(testName)
                     .then(() => {
                         addLine(`All words in '${testName}' answered or removed. Test deleted.`, 'success');
                         toast({ title: "Test Cleared!", description: `Test '${testName}' cleared and removed.` });
                     })
-                    .catch(e => {
-                        addLine(UI_TEXTS.REVIEW_UPDATE_ERROR, 'error');
+                    .catch((e: any) => {
+                        addLine(UI_TEXTS.REVIEW_UPDATE_ERROR + (e.message ? ` (${e.message})` : ''), 'error');
                         console.error("Error deleting empty test:", e);
                     });
             }
@@ -504,12 +529,11 @@ export const useCliInterface = () => {
     if (isCorrect) {
       addLine(UI_TEXTS.CORRECT, 'success');
       newCorrectAnswers++;
-      // Word answered correctly, it will be removed from the list to keep at the end of session.
     } else {
       const correctAnswerDisplay = currentReviewSession.direction === 'en-to-ja' ? word.ja : word.en;
       addLine(`${UI_TEXTS.INCORRECT_PREFIX}${correctAnswerDisplay}`, 'error');
       if (!newMissedInSession.find(w => w.en === word.en)) {
-        newMissedInSession.push(word); // This word remains in the test
+        newMissedInSession.push(word);
       }
     }
     
@@ -523,7 +547,6 @@ export const useCliInterface = () => {
     askNextReviewQuestion(updatedSession);
   };
 
-  // Search logic
   const handleSearchTermInput = (term: string) => {
     const searchTerm = term.trim().toLowerCase();
     if (!searchTerm) {
@@ -531,6 +554,12 @@ export const useCliInterface = () => {
       return;
     }
     addLine(UI_TEXTS.SEARCHING, 'info');
+    if (vocab.length === 0) {
+        addLine("Vocabulary is empty. Cannot perform search.", 'info');
+        addPrompt(UI_TEXTS.PRESS_ANY_KEY_CONTINUE);
+        setMode('SEARCH_RESULTS');
+        return;
+    }
     const results = vocab.filter(word => 
       word.en.toLowerCase().includes(searchTerm) || 
       word.ja.toLowerCase().includes(searchTerm)
@@ -545,8 +574,35 @@ export const useCliInterface = () => {
     addPrompt(UI_TEXTS.PRESS_ANY_KEY_CONTINUE);
     setMode('SEARCH_RESULTS');
   };
+
+  const processLoadedVocabData = async (fileContent: string, fileName: string) => {
+    addLine(UI_TEXTS.VOCAB_FILE_SELECTED(fileName));
+    try {
+      const parsedData = JSON.parse(fileContent);
+      if (Array.isArray(parsedData) && parsedData.every(item => typeof item.ja === 'string' && typeof item.en === 'string')) {
+        if (!db) {
+          addLine(UI_TEXTS.INDEXEDDB_NOT_SUPPORTED, 'error');
+          addLine(UI_TEXTS.VOCAB_FILE_LOAD_ERROR("Database not available to save vocabulary."), 'error');
+          setMode('MENU');
+          return;
+        }
+        await saveVocabulary(parsedData);
+        setVocab(parsedData);
+        addLine(UI_TEXTS.VOCAB_FILE_LOAD_SUCCESS(parsedData.length), 'success');
+        toast({ title: "Vocabulary Loaded", description: `Loaded ${parsedData.length} words from ${fileName}.` });
+      } else {
+        throw new Error("Invalid JSON structure.");
+      }
+    } catch (error: any) {
+      console.error("Error processing vocab file:", error);
+      addLine(UI_TEXTS.VOCAB_FILE_LOAD_INVALID + (error.message ? ` (${error.message})` : ''), 'error');
+      toast({ title: "Load Error", description: UI_TEXTS.VOCAB_FILE_LOAD_INVALID, variant: "destructive" });
+    } finally {
+      setMode('MENU');
+    }
+  };
+
   
-  // Effect for DB errors
   useEffect(() => {
     if (dbError) {
       addLine(`Database Error: ${dbError}`, 'error');
@@ -564,6 +620,9 @@ export const useCliInterface = () => {
     handleInputChange,
     processCommand,
     handleKeyDown,
-    showMenu // Expose for initial call if needed
+    showMenu,
+    isFileLoadRequested,
+    clearFileLoadRequest: () => setIsFileLoadRequested(false),
+    processLoadedVocabData,
   };
 };

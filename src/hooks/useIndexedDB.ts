@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Word } from '@/types';
-import { DB_NAME, DB_VERSION, MISSED_WORDS_STORE_NAME } from '@/types';
+import { DB_NAME, DB_VERSION, MISSED_WORDS_STORE_NAME, VOCAB_STORE_NAME, MAIN_VOCAB_KEY } from '@/types';
 
 export const useIndexedDB = () => {
   const [db, setDb] = useState<IDBDatabase | null>(null);
@@ -32,6 +32,10 @@ export const useIndexedDB = () => {
         if (!database.objectStoreNames.contains(MISSED_WORDS_STORE_NAME)) {
           database.createObjectStore(MISSED_WORDS_STORE_NAME, { keyPath: 'testName' });
         }
+        if (!database.objectStoreNames.contains(VOCAB_STORE_NAME)) {
+          // For storing the main vocabulary, we can use a fixed key.
+          database.createObjectStore(VOCAB_STORE_NAME, { keyPath: 'key' });
+        }
       };
     });
   }, []);
@@ -54,7 +58,6 @@ export const useIndexedDB = () => {
       getRequest.onsuccess = () => {
         let currentWords: Word[] = getRequest.result ? getRequest.result.words : [];
         
-        // Merge and deduplicate based on 'en' field
         const wordMap = new Map<string, Word>();
         currentWords.forEach(word => wordMap.set(word.en.toLowerCase(), word));
         words.forEach(word => wordMap.set(word.en.toLowerCase(), word));
@@ -77,28 +80,21 @@ export const useIndexedDB = () => {
 
 
   const loadData = useCallback(async (testName: string): Promise<Word[] | null> => {
-    if (!db) {
-      setError("DB not initialized for load.");
-      // Attempt to initialize if not already set.
+    let currentDb = db;
+    if (!currentDb) {
       try {
-        const initializedDb = await initDB();
-        if(!initializedDb) throw new Error("DB re-initialization failed for load.");
-         return new Promise((resolve, reject) => {
-            const transaction = initializedDb.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
-            const store = transaction.objectStore(MISSED_WORDS_STORE_NAME);
-            const request = store.get(testName);
-            request.onsuccess = () => resolve(request.result ? request.result.words : null);
-            request.onerror = () => {
-                setError(`Failed to load data: ${request.error?.message}`);
-                reject(request.error);
-            };
-        });
+        currentDb = await initDB();
       } catch (initError) {
-         throw new Error("DB not initialized and re-initialization failed for load.");
+        setError("DB not initialized and re-initialization failed for loadData.");
+        throw new Error("DB not initialized and re-initialization failed for loadData.");
       }
     }
+    if (!currentDb) { // Should not happen if initDB resolves, but as a safeguard
+        setError("DB is null after initDB for loadData.");
+        throw new Error("DB is null after initDB for loadData.");
+    }
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
+      const transaction = currentDb!.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
       const store = transaction.objectStore(MISSED_WORDS_STORE_NAME);
       const request = store.get(testName);
       request.onsuccess = () => resolve(request.result ? request.result.words : null);
@@ -144,30 +140,23 @@ export const useIndexedDB = () => {
   }, [db]);
   
   const getAllTestNames = useCallback(async (): Promise<string[]> => {
-    if (!db) {
-      setError("DB not initialized.");
-      // Attempt to initialize if not already set.
+    let currentDb = db;
+    if (!currentDb) {
       try {
-        const initializedDb = await initDB();
-        if(!initializedDb) throw new Error("DB re-initialization failed for getting test names.");
-        return new Promise((resolve, reject) => {
-            const transaction = initializedDb.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
-            const store = transaction.objectStore(MISSED_WORDS_STORE_NAME);
-            const request = store.getAllKeys();
-            request.onsuccess = () => resolve(request.result as string[]);
-            request.onerror = () => {
-                setError(`Failed to get all test names: ${request.error?.message}`);
-                reject(request.error);
-            };
-        });
+        currentDb = await initDB();
       } catch (initError) {
-         throw new Error("DB not initialized and re-initialization failed for getting test names.");
+        setError("DB not initialized and re-initialization failed for getAllTestNames.");
+        throw new Error("DB not initialized and re-initialization failed for getAllTestNames.");
       }
     }
+    if (!currentDb) {
+        setError("DB is null after initDB for getAllTestNames.");
+        throw new Error("DB is null after initDB for getAllTestNames.");
+    }
     return new Promise((resolve, reject) => {
-        const transaction = db.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
+        const transaction = currentDb!.transaction([MISSED_WORDS_STORE_NAME], 'readonly');
         const store = transaction.objectStore(MISSED_WORDS_STORE_NAME);
-        const request = store.getAllKeys(); // Gets all keys (testName)
+        const request = store.getAllKeys();
         request.onsuccess = () => resolve(request.result as string[]);
         request.onerror = () => {
             setError(`Failed to get all test names: ${request.error?.message}`);
@@ -176,6 +165,49 @@ export const useIndexedDB = () => {
     });
   }, [db, initDB]);
 
+  const saveVocabulary = useCallback(async (words: Word[]): Promise<void> => {
+    if (!db) {
+      setError("DB not initialized for saving vocabulary.");
+      throw new Error("DB not initialized for saving vocabulary.");
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([VOCAB_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(VOCAB_STORE_NAME);
+      const request = store.put({ key: MAIN_VOCAB_KEY, words });
+      request.onsuccess = () => resolve();
+      request.onerror = () => {
+        setError(`Failed to save vocabulary: ${request.error?.message}`);
+        reject(request.error);
+      };
+    });
+  }, [db]);
 
-  return { db, error, initDB, saveData, loadData, updateTestData, deleteTest, getAllTestNames };
+  const loadMainVocabulary = useCallback(async (): Promise<Word[] | null> => {
+    let currentDb = db;
+    if (!currentDb) {
+      try {
+        currentDb = await initDB();
+      } catch (initError) {
+        setError("DB not initialized and re-initialization failed for loadMainVocabulary.");
+        throw new Error("DB not initialized and re-initialization failed for loadMainVocabulary.");
+      }
+    }
+    if (!currentDb) {
+        setError("DB is null after initDB for loadMainVocabulary.");
+        throw new Error("DB is null after initDB for loadMainVocabulary.");
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = currentDb!.transaction([VOCAB_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(VOCAB_STORE_NAME);
+      const request = store.get(MAIN_VOCAB_KEY);
+      request.onsuccess = () => resolve(request.result ? request.result.words : null);
+      request.onerror = () => {
+        setError(`Failed to load main vocabulary: ${request.error?.message}`);
+        reject(request.error);
+      };
+    });
+  }, [db, initDB]);
+
+
+  return { db, error, initDB, saveData, loadData, updateTestData, deleteTest, getAllTestNames, saveVocabulary, loadMainVocabulary };
 };

@@ -26,7 +26,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <head><meta name="theme-color" content="#262626" /></head>
+      <head>
+        <meta name="theme-color" content="#262626" />
+      </head>
       <body className="font-mono antialiased">
         {children}
         <Toaster />
