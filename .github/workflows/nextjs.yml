@@ -1,0 +1,50 @@
+# GitHub Actions workflow for building the Next.js Static Site Generation (SSG) application
+
+name: Build Next.js SSG App
+
+on:
+  push:
+    branches:
+      - main # Or your default branch, e.g., master
+  pull_request:
+    branches:
+      - main # Or your default branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x' # Specify your Node.js version, matching your development environment
+
+      - name: Cache node_modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm # Path to npm cache directory
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+        env:
+          cache-name: cache-node-modules
+      
+      - name: Install dependencies
+        run: npm ci # Use 'ci' for cleaner installs in CI environments
+
+      - name: Build Next.js application
+        run: npm run build # This will generate static files in the 'out' directory due to `output: 'export'` in next.config.ts
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexicli-static-build # Name of the artifact
+          path: out/ # Path to the directory to upload (Next.js SSG output)
+          if-no-files-found: error # Fail the step if the 'out' directory is not found
