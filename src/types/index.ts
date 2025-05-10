@@ -43,7 +43,8 @@ export interface ReviewSession extends LearningSession {
 }
 
 export const DB_NAME = 'LexiCliDB';
-export const DB_VERSION = 1; // Increment if schema changes
+export const DB_VERSION = 2; // Increment if schema changes
 export const MISSED_WORDS_STORE_NAME = 'missedWords';
 export const VOCAB_STORE_NAME = 'vocabulary';
 export const MAIN_VOCAB_KEY = 'mainVocabulary';
+
