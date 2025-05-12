@@ -99,7 +99,7 @@ export default function HomePage() {
           onInputChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onSubmit={(e) => { e.preventDefault(); processCommand(inputValue); }}
-          disabled={isLoading || mode === 'EXITED'}
+ disabled={isLoading}
           isFocused={true}
         />
       )}
