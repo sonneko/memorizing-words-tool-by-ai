@@ -1,6 +1,6 @@
-# LexiCLI - CLI Word Learning PWA
+# Words-CLI - CLI Word Learning PWA
 
-LexiCLI is a Command Line Interface (CLI) style Progressive Web Application (PWA) designed for learning vocabulary, primarily Japanese-English words. It offers an offline-first experience, allowing users to study words, review missed ones, and load custom vocabulary sets.
+**Words-CLI** is a Command Line Interface (CLI) style Progressive Web Application (PWA) designed for learning vocabulary, primarily Japanese-English words. It offers an offline-first experience, allowing users to study words, review missed ones, and load custom vocabulary sets.
 
 **Note:** This application was primarily developed with the assistance of AI, aiming to showcase modern web development practices, PWA capabilities, and interactive CLI-like experiences in the browser.
 
@@ -60,7 +60,7 @@ LexiCLI is a Command Line Interface (CLI) style Progressive Web Application (PWA
     ```
     This will typically serve the static build from the `out/` directory.
 
-## How to Use LexiCLI
+## How to Use Words-CLI
 
 Once the application is running in your browser:
 
@@ -109,7 +109,7 @@ Once the application is running in your browser:
 
 ## PWA Installation
 
-LexiCLI is a Progressive Web App. You can "install" it to your device for a more app-like experience:
+Words-CLI is a Progressive Web App. You can "install" it to your device for a more app-like experience:
 
 -   **Desktop:** Look for an install icon in your browser's address bar (often a computer with a down arrow) or an option in the browser menu (e.g., "Install LexiCLI..." or "Add to Home Screen").
 -   **Mobile:** Your browser will typically show a prompt to "Add to Home Screen" or provide an option in its menu.
@@ -127,3 +127,7 @@ Installed PWAs can run in their own window and often have better offline support
 -   Service Workers (for PWA offline capabilities)
 
 This project serves as a demonstration of building interactive web applications with modern frontend technologies.
+
+---
+
+This README.md is writen by AI and improved by a person. This application is developed to show AI's possibility on code-writing.
