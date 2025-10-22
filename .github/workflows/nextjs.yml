@@ -38,6 +38,7 @@ jobs:
 
       - name: Commit and push to master branch
         run: |
+          mkdir out/.git
           mv ./.git/* o./out/.git/
           cd out
           git add .
