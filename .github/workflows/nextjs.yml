@@ -39,7 +39,7 @@ jobs:
       - name: Commit and push to master branch
         run: |
           mkdir out/.git
-          mv ./.git/* o./out/.git/
+          mv ./.git/* ./out/.git/
           cd out
           git add .
           git commit -m "chore: build artifacts from main branch"
